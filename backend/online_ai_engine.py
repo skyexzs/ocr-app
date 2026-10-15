@@ -8,8 +8,16 @@ from PIL import Image
 
 from utils.image_converter import load_image_pages, generate_thumbnail_base64, get_image_dimensions
 
-DEFAULT_GEMINI_MODEL = "gemini-2.0-flash"
+DEFAULT_GEMINI_MODEL = "gemini-3.5-flash"
 DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
+
+# Fallback sequence if a specific Gemini model is deprecated or experiencing temporary capacity limits
+GEMINI_FALLBACK_MODELS = [
+    "gemini-3.5-flash",
+    "gemini-flash-latest",
+    "gemini-3.8-flash",
+    "gemini-2.5-pro",
+]
 
 
 def _image_to_base64(pil_img: Image.Image, format: str = "JPEG") -> tuple[str, str]:
@@ -82,6 +90,78 @@ def verify_online_api_key(provider: str, api_key: str, base_url: Optional[str] =
         return {"valid": False, "error": str(e)}
 
 
+def _request_gemini_page(
+    client: httpx.Client,
+    model_name: str,
+    api_key: str,
+    b64: str,
+    mime: str,
+    prompt: str,
+) -> tuple[str, str]:
+    """Sends a single image page to Gemini API with automatic model fallback."""
+    # Build models attempt list starting with the requested model
+    models_to_try = [model_name]
+    for alt in GEMINI_FALLBACK_MODELS:
+        if alt not in models_to_try:
+            models_to_try.append(alt)
+
+    payload = {
+        "contents": [
+            {
+                "parts": [
+                    {
+                        "inlineData": {
+                            "mimeType": mime,
+                            "data": b64,
+                        }
+                    },
+                    {
+                        "text": prompt,
+                    },
+                ]
+            }
+        ],
+        "generationConfig": {
+            "temperature": 0.1,
+            "maxOutputTokens": 4096,
+        },
+    }
+
+    last_error = None
+    for target_model in models_to_try:
+        endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{target_model}:generateContent?key={api_key.strip()}"
+        try:
+            resp = client.post(endpoint, json=payload)
+            if resp.status_code == 200:
+                data = resp.json()
+                try:
+                    text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+                    return text, target_model
+                except (KeyError, IndexError):
+                    return "", target_model
+
+            # Extract error message
+            err_msg = resp.text
+            try:
+                err_msg = resp.json().get("error", {}).get("message", resp.text)
+            except Exception:
+                pass
+
+            last_error = f"Gemini ({target_model}) error: {err_msg}"
+            # If the model is not found, deprecated, or experiencing high demand, try next model
+            lower_err = err_msg.lower()
+            if any(term in lower_err for term in ["no longer available", "deprecated", "not found", "demand", "503", "404", "429"]):
+                continue
+            else:
+                # Fatal error (e.g. invalid API key) - stop trying alternatives
+                raise RuntimeError(last_error)
+        except httpx.RequestError as req_err:
+            last_error = f"Gemini connection error: {str(req_err)}"
+            continue
+
+    raise RuntimeError(last_error or "Gemini API failed on all candidate models")
+
+
 def extract_text_with_gemini(
     image_bytes: bytes,
     filename: str,
@@ -96,52 +176,24 @@ def extract_text_with_gemini(
     first_page_thumb = generate_thumbnail_base64(pages[0])
     first_page_dims = get_image_dimensions(pages[0])
 
-    endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key.strip()}"
     prompt = _get_ocr_prompt(output_format=output_format, language_hint=language_hint)
 
     page_texts = []
     total_words = 0
     total_chars = 0
+    actual_model_used = model
 
     with httpx.Client(timeout=45.0) as client:
         for idx, page in enumerate(pages):
             b64, mime = _image_to_base64(page)
-            payload = {
-                "contents": [
-                    {
-                        "parts": [
-                            {
-                                "inline_data": {
-                                    "mime_type": mime,
-                                    "data": b64
-                                }
-                            },
-                            {
-                                "text": prompt
-                            }
-                        ]
-                    }
-                ],
-                "generationConfig": {
-                    "temperature": 0.1,
-                    "maxOutputTokens": 4096,
-                }
-            }
-
-            resp = client.post(endpoint, json=payload)
-            if resp.status_code != 200:
-                err_msg = resp.text
-                try:
-                    err_msg = resp.json().get("error", {}).get("message", resp.text)
-                except Exception:
-                    pass
-                raise RuntimeError(f"Gemini API error (Page {idx + 1}): {err_msg}")
-
-            data = resp.json()
-            try:
-                extracted = data["candidates"][0]["content"]["parts"][0]["text"].strip()
-            except (KeyError, IndexError) as e:
-                extracted = ""
+            extracted, actual_model_used = _request_gemini_page(
+                client=client,
+                model_name=model,
+                api_key=api_key,
+                b64=b64,
+                mime=mime,
+                prompt=prompt,
+            )
 
             page_texts.append(extracted)
             total_chars += len(extracted)
@@ -167,7 +219,7 @@ def extract_text_with_gemini(
         "duration_ms": duration_ms,
         "dimensions": first_page_dims,
         "thumbnail": first_page_thumb,
-        "engine_used": f"gemini ({model})",
+        "engine_used": f"gemini ({actual_model_used})",
     }
 
 

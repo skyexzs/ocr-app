@@ -181,14 +181,16 @@ def process_single_item_sync(
 
     ocr_result = None
     engine_used = "tesseract (offline)"
+    fallback_reason = None
 
     try:
         # Check if online engine is requested and API key is provided or found in env
         if engine_type == "gemini":
             effective_key = online_key or os.getenv("GEMINI_API_KEY", "")
             if not effective_key:
+                fallback_reason = "Gemini API key is missing."
                 if not fallback_to_offline:
-                    raise ValueError("Gemini API key is missing and offline fallback is disabled.")
+                    raise ValueError(fallback_reason)
             else:
                 try:
                     ocr_result = extract_text_with_gemini(
@@ -201,6 +203,8 @@ def process_single_item_sync(
                     )
                     engine_used = ocr_result.get("engine_used", "gemini")
                 except Exception as online_err:
+                    fallback_reason = f"Gemini error: {str(online_err)}"
+                    print(f"[ONLINE FALLBACK] Gemini failed: {online_err}. Falling back to offline Tesseract OCR.", flush=True)
                     if not fallback_to_offline:
                         raise online_err
                     ocr_result = None
@@ -208,8 +212,9 @@ def process_single_item_sync(
         elif engine_type == "openai":
             effective_key = online_key or os.getenv("OPENAI_API_KEY", "")
             if not effective_key:
+                fallback_reason = "OpenAI API key is missing."
                 if not fallback_to_offline:
-                    raise ValueError("OpenAI API key is missing and offline fallback is disabled.")
+                    raise ValueError(fallback_reason)
             else:
                 try:
                     ocr_result = extract_text_with_openai(
@@ -223,6 +228,8 @@ def process_single_item_sync(
                     )
                     engine_used = ocr_result.get("engine_used", "openai")
                 except Exception as online_err:
+                    fallback_reason = f"OpenAI error: {str(online_err)}"
+                    print(f"[ONLINE FALLBACK] OpenAI failed: {online_err}. Falling back to offline Tesseract OCR.", flush=True)
                     if not fallback_to_offline:
                         raise online_err
                     ocr_result = None
@@ -259,6 +266,7 @@ def process_single_item_sync(
             "sentences_text": ocr_result.get("sentences_text", ocr_result["text"]),
             "output_format": ocr_result.get("output_format", output_format),
             "engine_used": engine_used,
+            "fallback_reason": fallback_reason,
             "word_count": ocr_result["word_count"],
             "char_count": ocr_result["char_count"],
             "pages_count": ocr_result["pages_count"],
@@ -388,7 +396,7 @@ def get_system_info():
                 "type": "online",
                 "requires_key": True,
                 "default_model": DEFAULT_GEMINI_MODEL,
-                "models": ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"],
+                "models": ["gemini-3.5-flash", "gemini-flash-latest", "gemini-3.8-flash", "gemini-2.5-pro"],
                 "has_env_key": bool(os.getenv("GEMINI_API_KEY")),
                 "description": "High accuracy multimodal LLM. Outstanding for handwriting, complex layouts, and fluent sentence transcription.",
             },

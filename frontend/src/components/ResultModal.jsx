@@ -100,12 +100,15 @@ export default function ResultModal({
     setIsRerunning(true);
     try {
       let customKey = '';
+      let customModel = '';
       if (targetEngine === 'gemini') {
         customKey = localStorage.getItem('ocr_key_gemini') || '';
+        customModel = localStorage.getItem('ocr_model_gemini') || 'gemini-3.5-flash';
       } else if (targetEngine === 'openai') {
         customKey = localStorage.getItem('ocr_key_openai') || '';
+        customModel = localStorage.getItem('ocr_model_openai') || 'gpt-4o-mini';
       }
-      await onRerun(item.id, null, viewFormat, targetEngine, customKey);
+      await onRerun(item.id, null, viewFormat, targetEngine, customKey, customModel);
     } finally {
       setIsRerunning(false);
     }
@@ -255,6 +258,26 @@ export default function ResultModal({
             </button>
           </div>
         </div>
+
+        {/* Fallback notification banner if fallback occurred */}
+        {item.fallback_reason && (
+          <div className="px-6 py-2.5 bg-amber-950/70 border-b border-amber-800/80 text-xs text-amber-200 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2 overflow-hidden">
+              <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
+              <span className="truncate">
+                <strong>Online AI Fallback:</strong> {item.fallback_reason}
+              </span>
+            </div>
+            <button
+              type="button"
+              disabled={isRerunning}
+              onClick={() => handleRerunWithEngine('gemini')}
+              className="px-2.5 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 text-[11px] font-medium transition flex-shrink-0"
+            >
+              Retry Online AI
+            </button>
+          </div>
+        )}
 
         {/* Modal Split View Body */}
         <div className="flex-1 grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-800 overflow-hidden">

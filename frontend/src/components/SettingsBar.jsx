@@ -274,7 +274,9 @@ export default function SettingsBar({
               <div
                 onClick={() => onUpdateSettings({
                   engine_type: 'gemini',
-                  online_model: settings.online_model || 'gemini-2.0-flash',
+                  online_model: settings.online_model && !['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'].includes(settings.online_model)
+                    ? settings.online_model
+                    : 'gemini-3.5-flash',
                 })}
                 className={`cursor-pointer rounded-xl p-3 border transition relative flex flex-col justify-between ${
                   engineType === 'gemini'
@@ -444,16 +446,17 @@ export default function SettingsBar({
                   <select
                     value={
                       settings.online_model ||
-                      (engineType === 'gemini' ? 'gemini-2.0-flash' : 'gpt-4o-mini')
+                      (engineType === 'gemini' ? 'gemini-3.5-flash' : 'gpt-4o-mini')
                     }
                     onChange={(e) => onUpdateSettings({ online_model: e.target.value })}
                     className="w-full px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-slate-200 font-mono text-xs focus:outline-none focus:border-cyan-500"
                   >
                     {engineType === 'gemini' ? (
                       <>
-                        <option value="gemini-2.0-flash">gemini-2.0-flash (Recommended)</option>
-                        <option value="gemini-1.5-flash">gemini-1.5-flash</option>
-                        <option value="gemini-1.5-pro">gemini-1.5-pro (High detail)</option>
+                        <option value="gemini-3.5-flash">gemini-3.5-flash (Recommended & Active)</option>
+                        <option value="gemini-flash-latest">gemini-flash-latest</option>
+                        <option value="gemini-3.8-flash">gemini-3.8-flash</option>
+                        <option value="gemini-2.5-pro">gemini-2.5-pro (High detail)</option>
                       </>
                     ) : (
                       <>

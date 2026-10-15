@@ -41,13 +41,17 @@ export default function App() {
   const [settings, setSettings] = useState(() => {
     let storedEngine = 'tesseract';
     let storedKey = '';
-    let storedModel = 'gemini-2.0-flash';
+    let storedModel = 'gemini-3.5-flash';
     try {
       const e = localStorage.getItem('ocr_engine_type');
       if (e) storedEngine = e;
       if (storedEngine === 'gemini') {
         storedKey = localStorage.getItem('ocr_key_gemini') || '';
-        storedModel = localStorage.getItem('ocr_model_gemini') || 'gemini-2.0-flash';
+        let m = localStorage.getItem('ocr_model_gemini') || 'gemini-3.5-flash';
+        if (['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.5-flash'].includes(m)) {
+          m = 'gemini-3.5-flash';
+        }
+        storedModel = m;
       } else if (storedEngine === 'openai') {
         storedKey = localStorage.getItem('ocr_key_openai') || '';
         storedModel = localStorage.getItem('ocr_model_openai') || 'gpt-4o-mini';
@@ -77,7 +81,11 @@ export default function App() {
           localStorage.setItem('ocr_engine_type', newVals.engine_type);
           if (newVals.engine_type === 'gemini') {
             updated.online_api_key = localStorage.getItem('ocr_key_gemini') || '';
-            updated.online_model = updated.online_model || 'gemini-2.0-flash';
+            let m = updated.online_model || localStorage.getItem('ocr_model_gemini') || 'gemini-3.5-flash';
+            if (['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.5-flash'].includes(m)) {
+              m = 'gemini-3.5-flash';
+            }
+            updated.online_model = m;
           } else if (newVals.engine_type === 'openai') {
             updated.online_api_key = localStorage.getItem('ocr_key_openai') || '';
             updated.online_model = updated.online_model || 'gpt-4o-mini';
@@ -85,6 +93,9 @@ export default function App() {
         }
         if (newVals.online_api_key !== undefined) {
           localStorage.setItem(`ocr_key_${updated.engine_type}`, newVals.online_api_key);
+        }
+        if (newVals.online_model !== undefined) {
+          localStorage.setItem(`ocr_model_${updated.engine_type}`, newVals.online_model);
         }
       } catch (_) {}
       return updated;

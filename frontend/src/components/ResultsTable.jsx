@@ -246,8 +246,12 @@ export default function ResultsTable({
                           </span>
                         ) : item.engine_used.includes('fallback') ? (
                           <span
-                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-950/70 text-amber-300 border border-amber-800/60"
-                            title="Online API failed; fell back to offline Tesseract"
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-950/70 text-amber-300 border border-amber-800/60 cursor-help"
+                            title={
+                              item.fallback_reason
+                                ? `Online API failed: ${item.fallback_reason}. Fell back to offline Tesseract.`
+                                : "Online API failed; fell back to offline Tesseract"
+                            }
                           >
                             <AlertTriangle className="w-3 h-3 text-amber-400" />
                             Fallback
