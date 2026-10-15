@@ -32,6 +32,12 @@
   - Automatically generates `.txt` files in `./output` (e.g. `invoice.heic` → `invoice.txt`).
   - Configurable destination path with native OS "Open Folder" action.
   - One-click "Download All as ZIP" archive.
+- 🤖 **Optional Intelligent Online AI Engines (Google Gemini & OpenAI Vision)**:
+  - **Not forced — 100% Offline by default**: The application runs completely offline using local Tesseract OCR with zero network calls out of the box.
+  - **Opt-in Cloud Intelligence**: Users can optionally select **Google Gemini Flash** (`gemini-2.0-flash`) or **OpenAI Vision** (`gpt-4o-mini`, `gpt-4o`) for maximum accuracy on handwriting, complex multi-column layouts, receipts, and natural flowing sentences.
+  - **Secure Client-Side Key Storage**: API keys are saved strictly in browser `localStorage` (or via optional server environment variables `GEMINI_API_KEY` / `OPENAI_API_KEY`) and are never written to disk or repository files.
+  - **Interactive Key Verification**: Built-in "Test Key" button validates your API key before starting batch jobs.
+  - **Automatic Offline Fallback**: If an online API call fails (due to network outage, rate limits, or invalid key), the system seamlessly falls back to local Tesseract OCR without interrupting the batch.
 - ✍️ **Human-Readable Sentence Output (vs. Visual Layout)**:
   - Intelligently reconstructs natural, flowing sentences and paragraphs from fragmented image text.
   - Automatically joins line breaks split mid-sentence, repairs hyphenated words (`docu-\nment` → `document`), fixes punctuation spacing glitches, and capitalizes sentences.
@@ -39,7 +45,7 @@
   - Toggle between **Flowing Sentences** and **Image Layout** globally in the settings toolbar or live within the side-by-side inspection modal.
 - 🔍 **Interactive Inspection Split-View**:
   - Click any document in the results table to view original image side-by-side with recognized text.
-  - Zoom, pan, confidence score %, word & character counts, and real-time sentence/layout switcher.
+  - Zoom, pan, confidence score %, word & character counts, engine badge (`Offline`, `Gemini AI`, `OpenAI AI`), and quick re-run with any engine.
 
 ---
 

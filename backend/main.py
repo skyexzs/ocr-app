@@ -19,6 +19,13 @@ from pydantic import BaseModel
 
 from ocr_engine import extract_text_from_image, get_ocr_engine_info
 from utils.image_converter import is_supported_image, SUPPORTED_EXTENSIONS
+from online_ai_engine import (
+    extract_text_with_gemini,
+    extract_text_with_openai,
+    verify_online_api_key,
+    DEFAULT_GEMINI_MODEL,
+    DEFAULT_OPENAI_MODEL,
+)
 
 # Root project paths
 BACKEND_DIR = Path(__file__).resolve().parent
@@ -65,6 +72,11 @@ class BatchSettings(BaseModel):
     auto_rotate: bool = False
     psm: int = 3
     output_format: str = "visual"
+    engine_type: str = "tesseract"
+    online_api_key: Optional[str] = None
+    online_model: Optional[str] = None
+    online_base_url: Optional[str] = None
+    fallback_to_offline: bool = True
 
 
 def sanitize_relative_path(rel_path: str, fallback_filename: str) -> Path:
@@ -160,18 +172,77 @@ def process_single_item_sync(
 ) -> Dict[str, Any]:
     """Worker function executed inside ThreadPoolExecutor for OCR extraction."""
     start_time = time.perf_counter()
+    engine_type = options.get("engine_type", "tesseract")
+    fallback_to_offline = options.get("fallback_to_offline", True)
+    online_key = (options.get("online_api_key") or "").strip()
+    online_model = options.get("online_model")
+    online_base_url = options.get("online_base_url")
+    output_format = options.get("output_format", "visual")
+
+    ocr_result = None
+    engine_used = "tesseract (offline)"
+
     try:
-        # Run OCR engine
-        ocr_result = extract_text_from_image(
-            image_bytes=image_bytes,
-            filename=filename,
-            language=options.get("language", "eng"),
-            preprocess_mode=options.get("preprocess_mode", "auto"),
-            enhance_contrast=options.get("enhance_contrast", True),
-            auto_rotate=options.get("auto_rotate", False),
-            psm=options.get("psm", 3),
-            output_format=options.get("output_format", "visual"),
-        )
+        # Check if online engine is requested and API key is provided or found in env
+        if engine_type == "gemini":
+            effective_key = online_key or os.getenv("GEMINI_API_KEY", "")
+            if not effective_key:
+                if not fallback_to_offline:
+                    raise ValueError("Gemini API key is missing and offline fallback is disabled.")
+            else:
+                try:
+                    ocr_result = extract_text_with_gemini(
+                        image_bytes=image_bytes,
+                        filename=filename,
+                        api_key=effective_key,
+                        model=online_model or DEFAULT_GEMINI_MODEL,
+                        output_format=output_format,
+                        language_hint=options.get("language", "auto"),
+                    )
+                    engine_used = ocr_result.get("engine_used", "gemini")
+                except Exception as online_err:
+                    if not fallback_to_offline:
+                        raise online_err
+                    ocr_result = None
+
+        elif engine_type == "openai":
+            effective_key = online_key or os.getenv("OPENAI_API_KEY", "")
+            if not effective_key:
+                if not fallback_to_offline:
+                    raise ValueError("OpenAI API key is missing and offline fallback is disabled.")
+            else:
+                try:
+                    ocr_result = extract_text_with_openai(
+                        image_bytes=image_bytes,
+                        filename=filename,
+                        api_key=effective_key,
+                        model=online_model or DEFAULT_OPENAI_MODEL,
+                        output_format=output_format,
+                        language_hint=options.get("language", "auto"),
+                        base_url=online_base_url,
+                    )
+                    engine_used = ocr_result.get("engine_used", "openai")
+                except Exception as online_err:
+                    if not fallback_to_offline:
+                        raise online_err
+                    ocr_result = None
+
+        # Fallback or default to local Tesseract OCR engine (100% offline)
+        if ocr_result is None:
+            ocr_result = extract_text_from_image(
+                image_bytes=image_bytes,
+                filename=filename,
+                language=options.get("language", "eng"),
+                preprocess_mode=options.get("preprocess_mode", "auto"),
+                enhance_contrast=options.get("enhance_contrast", True),
+                auto_rotate=options.get("auto_rotate", False),
+                psm=options.get("psm", 3),
+                output_format=output_format,
+            )
+            if engine_type in ("gemini", "openai"):
+                engine_used = "tesseract (offline fallback)"
+            else:
+                engine_used = "tesseract (offline)"
 
         # Save to local text file (uses active formatted text)
         rel_path = sanitize_relative_path(relative_path_str, filename)
@@ -186,7 +257,8 @@ def process_single_item_sync(
             "text": ocr_result["text"],
             "raw_text": ocr_result.get("raw_text", ocr_result["text"]),
             "sentences_text": ocr_result.get("sentences_text", ocr_result["text"]),
-            "output_format": ocr_result.get("output_format", options.get("output_format", "visual")),
+            "output_format": ocr_result.get("output_format", output_format),
+            "engine_used": engine_used,
             "word_count": ocr_result["word_count"],
             "char_count": ocr_result["char_count"],
             "pages_count": ocr_result["pages_count"],
@@ -284,6 +356,12 @@ async def run_batch_worker(batch_id: str):
     })
 
 
+class VerifyKeyRequest(BaseModel):
+    provider: str
+    api_key: str
+    base_url: Optional[str] = None
+
+
 @app.get("/api/system/info")
 def get_system_info():
     """Returns engine availability, languages, and configured paths."""
@@ -295,7 +373,47 @@ def get_system_info():
         "output_directory": str(out_dir),
         "output_exists": out_dir.exists(),
         "cpu_workers": CPU_WORKERS,
+        "online_engines": [
+            {
+                "id": "tesseract",
+                "name": "Tesseract OCR (100% Offline)",
+                "type": "offline",
+                "requires_key": False,
+                "description": "Fast, fully private, runs locally without internet.",
+                "default": True,
+            },
+            {
+                "id": "gemini",
+                "name": "Google Gemini Flash (AI Vision)",
+                "type": "online",
+                "requires_key": True,
+                "default_model": DEFAULT_GEMINI_MODEL,
+                "models": ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"],
+                "has_env_key": bool(os.getenv("GEMINI_API_KEY")),
+                "description": "High accuracy multimodal LLM. Outstanding for handwriting, complex layouts, and fluent sentence transcription.",
+            },
+            {
+                "id": "openai",
+                "name": "OpenAI Vision (GPT-4o)",
+                "type": "online",
+                "requires_key": True,
+                "default_model": DEFAULT_OPENAI_MODEL,
+                "models": ["gpt-4o-mini", "gpt-4o"],
+                "has_env_key": bool(os.getenv("OPENAI_API_KEY")),
+                "description": "Powerful OpenAI Vision model. Supports custom proxy / OpenAI-compatible base URLs.",
+            },
+        ],
     }
+
+
+@app.post("/api/system/verify-key")
+def api_verify_key(req: VerifyKeyRequest):
+    """Validates an API key against provider endpoints."""
+    return verify_online_api_key(
+        provider=req.provider,
+        api_key=req.api_key,
+        base_url=req.base_url,
+    )
 
 
 @app.post("/api/system/output-folder")
@@ -347,6 +465,11 @@ async def create_batch(
     auto_rotate: bool = Form(False),
     psm: int = Form(3),
     output_format: str = Form("visual"),
+    engine_type: str = Form("tesseract"),
+    online_api_key: Optional[str] = Form(None),
+    online_model: Optional[str] = Form(None),
+    online_base_url: Optional[str] = Form(None),
+    fallback_to_offline: bool = Form(True),
 ):
     """
     Submits a batch of images for OCR extraction.
@@ -416,6 +539,11 @@ async def create_batch(
             "auto_rotate": auto_rotate,
             "psm": psm,
             "output_format": output_format,
+            "engine_type": engine_type,
+            "online_api_key": online_api_key,
+            "online_model": online_model,
+            "online_base_url": online_base_url,
+            "fallback_to_offline": fallback_to_offline,
         },
         "items": items,
         "created_at": time.time(),
@@ -549,6 +677,10 @@ async def rerun_single_item(
     preprocess_mode: Optional[str] = None,
     language: Optional[str] = None,
     output_format: Optional[str] = None,
+    engine_type: Optional[str] = None,
+    online_api_key: Optional[str] = None,
+    online_model: Optional[str] = None,
+    fallback_to_offline: Optional[bool] = None,
 ):
     """Re-runs OCR on an existing item with updated or existing settings."""
     batch = batches_db.get(batch_id)
@@ -566,6 +698,14 @@ async def rerun_single_item(
         options["language"] = language
     if output_format:
         options["output_format"] = output_format
+    if engine_type:
+        options["engine_type"] = engine_type
+    if online_api_key is not None:
+        options["online_api_key"] = online_api_key
+    if online_model is not None:
+        options["online_model"] = online_model
+    if fallback_to_offline is not None:
+        options["fallback_to_offline"] = fallback_to_offline
 
     item["status"] = "processing"
     await broadcast_batch_event(batch_id, "item_status", {

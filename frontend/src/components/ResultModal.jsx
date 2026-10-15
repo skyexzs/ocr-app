@@ -14,7 +14,10 @@ import {
   ExternalLink,
   Layers,
   Sparkles,
-  AlignLeft
+  AlignLeft,
+  ShieldCheck,
+  Zap,
+  AlertTriangle
 } from 'lucide-react';
 
 export default function ResultModal({
@@ -93,6 +96,21 @@ export default function ResultModal({
     }
   };
 
+  const handleRerunWithEngine = async (targetEngine) => {
+    setIsRerunning(true);
+    try {
+      let customKey = '';
+      if (targetEngine === 'gemini') {
+        customKey = localStorage.getItem('ocr_key_gemini') || '';
+      } else if (targetEngine === 'openai') {
+        customKey = localStorage.getItem('ocr_key_openai') || '';
+      }
+      await onRerun(item.id, null, viewFormat, targetEngine, customKey);
+    } finally {
+      setIsRerunning(false);
+    }
+  };
+
   const activeWords = displayedText ? displayedText.split(/\s+/).filter(Boolean).length : 0;
   const activeChars = displayedText ? displayedText.length : 0;
 
@@ -114,6 +132,30 @@ export default function ResultModal({
             <div className="overflow-hidden">
               <h3 className="text-base font-semibold text-white truncate flex items-center gap-2">
                 <span>{item.filename}</span>
+                {item.engine_used && (
+                  <span
+                    className={`text-[11px] px-2 py-0.5 rounded-full font-mono flex items-center gap-1 border ${
+                      item.engine_used.includes('gemini')
+                        ? 'bg-purple-950/80 text-purple-300 border-purple-800'
+                        : item.engine_used.includes('openai')
+                        ? 'bg-sky-950/80 text-sky-300 border-sky-800'
+                        : item.engine_used.includes('fallback')
+                        ? 'bg-amber-950/80 text-amber-300 border-amber-800'
+                        : 'bg-emerald-950/80 text-emerald-300 border-emerald-800'
+                    }`}
+                  >
+                    {item.engine_used.includes('gemini') ? (
+                      <Sparkles className="w-3 h-3 text-purple-400" />
+                    ) : item.engine_used.includes('openai') ? (
+                      <Zap className="w-3 h-3 text-sky-400" />
+                    ) : item.engine_used.includes('fallback') ? (
+                      <AlertTriangle className="w-3 h-3 text-amber-400" />
+                    ) : (
+                      <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                    )}
+                    <span>{item.engine_used}</span>
+                  </span>
+                )}
                 {item.confidence !== undefined && (
                   <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800 font-mono">
                     {item.confidence}% confidence
@@ -131,6 +173,41 @@ export default function ResultModal({
 
           {/* Action buttons */}
           <div className="flex items-center gap-2 flex-shrink-0">
+            {/* Quick Re-run with specific engine */}
+            <div className="hidden lg:flex items-center rounded-lg bg-slate-900 p-0.5 border border-slate-700/80 text-xs">
+              <span className="text-[10px] text-slate-500 px-2">Re-run:</span>
+              <button
+                type="button"
+                disabled={isRerunning}
+                onClick={() => handleRerunWithEngine('tesseract')}
+                className="px-2 py-1 rounded hover:bg-slate-800 text-slate-300 hover:text-emerald-300 flex items-center gap-1 text-[11px] transition"
+                title="Re-run using Offline Tesseract"
+              >
+                <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                Offline
+              </button>
+              <button
+                type="button"
+                disabled={isRerunning}
+                onClick={() => handleRerunWithEngine('gemini')}
+                className="px-2 py-1 rounded hover:bg-slate-800 text-slate-300 hover:text-purple-300 flex items-center gap-1 text-[11px] transition"
+                title="Re-run using Google Gemini AI"
+              >
+                <Sparkles className="w-3 h-3 text-purple-400" />
+                Gemini
+              </button>
+              <button
+                type="button"
+                disabled={isRerunning}
+                onClick={() => handleRerunWithEngine('openai')}
+                className="px-2 py-1 rounded hover:bg-slate-800 text-slate-300 hover:text-sky-300 flex items-center gap-1 text-[11px] transition"
+                title="Re-run using OpenAI Vision"
+              >
+                <Zap className="w-3 h-3 text-sky-400" />
+                OpenAI
+              </button>
+            </div>
+
             <button
               type="button"
               onClick={handleCopy}
@@ -163,10 +240,10 @@ export default function ResultModal({
               onClick={() => handleRerun()}
               disabled={isRerunning}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700 transition"
-              title="Re-run OCR on this document"
+              title="Re-run OCR with current settings"
             >
               <RefreshCw className={`w-3.5 h-3.5 text-cyan-400 ${isRerunning ? 'animate-spin' : ''}`} />
-              <span>Re-run</span>
+              <span>{isRerunning ? 'Running...' : 'Re-run'}</span>
             </button>
 
             <button

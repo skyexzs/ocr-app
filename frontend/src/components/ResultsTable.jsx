@@ -13,7 +13,11 @@ import {
   Search,
   ExternalLink,
   Layers,
-  Folder
+  Folder,
+  ShieldCheck,
+  Sparkles,
+  Zap,
+  AlertTriangle
 } from 'lucide-react';
 
 export default function ResultsTable({
@@ -150,6 +154,7 @@ export default function ResultsTable({
             <tr>
               <th className="py-3 px-4 w-16">Preview</th>
               <th className="py-3 px-4">Document / Path</th>
+              <th className="py-3 px-4">Engine</th>
               <th className="py-3 px-4">Status</th>
               <th className="py-3 px-4">Stats</th>
               <th className="py-3 px-4">Confidence</th>
@@ -160,7 +165,7 @@ export default function ResultsTable({
           <tbody className="divide-y divide-slate-800/60">
             {filteredItems.length === 0 ? (
               <tr>
-                <td colSpan={7} className="py-12 text-center text-slate-500">
+                <td colSpan={8} className="py-12 text-center text-slate-500">
                   <div className="flex flex-col items-center justify-center gap-2">
                     <FileText className="w-8 h-8 text-slate-600" />
                     <span>No document records match the selected filter.</span>
@@ -218,6 +223,47 @@ export default function ResultsTable({
                           {formatSize(item.file_size)}
                         </span>
                       </div>
+                    </td>
+
+                    {/* Engine Badge */}
+                    <td className="py-3 px-4">
+                      {item.engine_used ? (
+                        item.engine_used.includes('gemini') ? (
+                          <span
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-purple-950/70 text-purple-300 border border-purple-800/60"
+                            title={item.engine_used}
+                          >
+                            <Sparkles className="w-3 h-3 text-purple-400" />
+                            Gemini AI
+                          </span>
+                        ) : item.engine_used.includes('openai') ? (
+                          <span
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-sky-950/70 text-sky-300 border border-sky-800/60"
+                            title={item.engine_used}
+                          >
+                            <Zap className="w-3 h-3 text-sky-400" />
+                            OpenAI AI
+                          </span>
+                        ) : item.engine_used.includes('fallback') ? (
+                          <span
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-950/70 text-amber-300 border border-amber-800/60"
+                            title="Online API failed; fell back to offline Tesseract"
+                          >
+                            <AlertTriangle className="w-3 h-3 text-amber-400" />
+                            Fallback
+                          </span>
+                        ) : (
+                          <span
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-900 text-slate-300 border border-slate-700/80"
+                            title="Offline Tesseract OCR"
+                          >
+                            <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                            Offline
+                          </span>
+                        )
+                      ) : (
+                        <span className="text-slate-600">—</span>
+                      )}
                     </td>
 
                     {/* Status Badge */}

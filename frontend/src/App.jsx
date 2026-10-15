@@ -38,14 +38,58 @@ export default function App() {
   const [systemInfo, setSystemInfo] = useState(null);
   const [batchDuration, setBatchDuration] = useState(null);
 
-  const [settings, setSettings] = useState({
-    preprocess_mode: 'auto',
-    language: 'eng',
-    enhance_contrast: true,
-    auto_rotate: false,
-    psm: 3,
-    output_format: 'sentences',
+  const [settings, setSettings] = useState(() => {
+    let storedEngine = 'tesseract';
+    let storedKey = '';
+    let storedModel = 'gemini-2.0-flash';
+    try {
+      const e = localStorage.getItem('ocr_engine_type');
+      if (e) storedEngine = e;
+      if (storedEngine === 'gemini') {
+        storedKey = localStorage.getItem('ocr_key_gemini') || '';
+        storedModel = localStorage.getItem('ocr_model_gemini') || 'gemini-2.0-flash';
+      } else if (storedEngine === 'openai') {
+        storedKey = localStorage.getItem('ocr_key_openai') || '';
+        storedModel = localStorage.getItem('ocr_model_openai') || 'gpt-4o-mini';
+      }
+    } catch (_) {}
+
+    return {
+      preprocess_mode: 'auto',
+      language: 'eng',
+      enhance_contrast: true,
+      auto_rotate: false,
+      psm: 3,
+      output_format: 'sentences',
+      engine_type: storedEngine,
+      online_api_key: storedKey,
+      online_model: storedModel,
+      online_base_url: '',
+      fallback_to_offline: true,
+    };
   });
+
+  const handleUpdateSettings = (newVals) => {
+    setSettings((prev) => {
+      const updated = { ...prev, ...newVals };
+      try {
+        if (newVals.engine_type) {
+          localStorage.setItem('ocr_engine_type', newVals.engine_type);
+          if (newVals.engine_type === 'gemini') {
+            updated.online_api_key = localStorage.getItem('ocr_key_gemini') || '';
+            updated.online_model = updated.online_model || 'gemini-2.0-flash';
+          } else if (newVals.engine_type === 'openai') {
+            updated.online_api_key = localStorage.getItem('ocr_key_openai') || '';
+            updated.online_model = updated.online_model || 'gpt-4o-mini';
+          }
+        }
+        if (newVals.online_api_key !== undefined) {
+          localStorage.setItem(`ocr_key_${updated.engine_type}`, newVals.online_api_key);
+        }
+      } catch (_) {}
+      return updated;
+    });
+  };
 
   const eventSourceRef = useRef(null);
 
@@ -143,6 +187,17 @@ export default function App() {
       formData.append('auto_rotate', settings.auto_rotate);
       formData.append('psm', settings.psm);
       formData.append('output_format', settings.output_format);
+      formData.append('engine_type', settings.engine_type || 'tesseract');
+      if (settings.online_api_key) {
+        formData.append('online_api_key', settings.online_api_key);
+      }
+      if (settings.online_model) {
+        formData.append('online_model', settings.online_model);
+      }
+      if (settings.online_base_url) {
+        formData.append('online_base_url', settings.online_base_url);
+      }
+      formData.append('fallback_to_offline', settings.fallback_to_offline !== false ? 'true' : 'false');
 
       const res = await fetch('/api/batches', {
         method: 'POST',
@@ -252,12 +307,15 @@ export default function App() {
   };
 
   // Re-run single item
-  const handleRerunItem = async (itemId, customMode, customFormat) => {
+  const handleRerunItem = async (itemId, customMode, customFormat, customEngine, customKey, customModel) => {
     if (!activeBatchId) return;
     try {
       const params = new URLSearchParams();
       if (customMode) params.append('preprocess_mode', customMode);
       if (customFormat) params.append('output_format', customFormat);
+      if (customEngine) params.append('engine_type', customEngine);
+      if (customKey) params.append('online_api_key', customKey);
+      if (customModel) params.append('online_model', customModel);
       const queryStr = params.toString() ? `?${params.toString()}` : '';
       const res = await fetch(`/api/batches/${activeBatchId}/items/${itemId}/rerun${queryStr}`, {
         method: 'POST',
@@ -311,9 +369,19 @@ export default function App() {
                 <h1 className="text-base sm:text-lg font-bold text-white tracking-tight">
                   Bulk OCR Studio
                 </h1>
-                <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                  Offline
-                </span>
+                {settings.engine_type === 'tesseract' ? (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
+                    <ShieldCheck className="w-3 h-3" /> Offline
+                  </span>
+                ) : settings.engine_type === 'gemini' ? (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase tracking-wider bg-purple-500/10 text-purple-300 border border-purple-500/20 flex items-center gap-1">
+                    <Sparkles className="w-3 h-3 text-purple-400" /> Gemini AI
+                  </span>
+                ) : (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase tracking-wider bg-sky-500/10 text-sky-300 border border-sky-500/20 flex items-center gap-1">
+                    <Zap className="w-3 h-3 text-sky-400" /> OpenAI AI
+                  </span>
+                )}
               </div>
               <p className="text-[11px] text-slate-400 hidden sm:block">
                 Batch Image-to-Text Recognition & Local Storage
@@ -357,7 +425,7 @@ export default function App() {
         {/* Settings Bar */}
         <SettingsBar
           settings={settings}
-          onUpdateSettings={(newVals) => setSettings((s) => ({ ...s, ...newVals }))}
+          onUpdateSettings={handleUpdateSettings}
           systemInfo={systemInfo}
           onOpenFolder={handleOpenFolder}
           onRefreshSystemInfo={fetchSystemInfo}
